@@ -1,19 +1,20 @@
 {
-  "name": "POAPBot",
+  "name": "poap-bot",
   "description": "Discord bot for POAP drops",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "nodemon bot.js"
   },
   "dependencies": {
     "axios": "^0.20.0",
     "discord.js": "^12.2.0",
     "fast-csv": "^4.3.2",
-    "pg": "^8.3.0",
+    "moment": "^2.29.1",
+    "pg-promise": "^10.6.2",
     "pino": "^6.6.1",
     "pino-pretty": "^4.2.1",
-    "redis": "^3.0.2",
-    "request": "2.81.0"
+    "request": "2.81.0",
+    "uuid": "^8.3.0"
   }
 }

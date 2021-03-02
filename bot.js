@@ -1,10 +1,18 @@
 const Discord = require("discord.js");
-const { Client } = require("pg");
-const redis = require("redis");
-const { promisify } = require("util");
 const axios = require("axios");
 const csv = require("fast-csv");
 const pino = require("pino");
+const moment = require("moment");
+const queryHelper = require("./db");
+const pgPromise = require("pg-promise");
+const { v4: uuidv4 } = require("uuid");
+
+const db = pgPromise()({
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "postgres",
+  password: process.env.DB_PASSWORD || "postgres",
+  database: process.env.DB_DATABASE || "",
+});
 
 const logger = pino({
   prettyPrint: {
@@ -39,17 +47,11 @@ const steps = {
 };
 
 const defaultStartMessage =
-  "The POAP distribution event is now active. Post a message in this channel to earn your POAP token.";
+  "The POAP distribution event is now active. *DM me to get your POAP*";
 const defaultEndMessage = "The POAP distribution event has ended.";
 const defaultResponseMessage =
   "Thanks for participating in the event. Here is a link where you can claim your POAP token: {code} ";
-const defaultPass = "-";
-const defaultReaction = "🏅";
-const codeSet = "#codes";
-const whitelist = "#whitelist";
-const welcomenMsg = "Hey!";
-const cantDmMsg = "I can't sent you a DM :/";
-let onlyWhitelist = false;
+const instructions = ":warning: :warning: :warning: :warning: **You MUST send me a DIRECT MESSAGE with the code** :warning: :warning: :warning: :warning:  (click my name)"
 
 var state = {
   state: states.LISTEN,
@@ -63,36 +65,16 @@ var guildEvents = new Map();
 
 const client = new Discord.Client();
 
-const pgClient = new Client({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_DATABASE,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
-});
-var dbConnected = false;
-
-const redisClient = redis.createClient(process.env.REDIS_URL);
-
 client.on("ready", () => {
   logger.info("[SETUP] Discord client ready!");
 
   (async () => {
-    await pgClient.connect();
-    dbConnected = true;
-    const res = await pgClient.query("SELECT $1::text as message", [
-      "DB ready",
-    ]);
-    logger.info(`[SETUP] ${res.rows[0].message}`); // Hello world!
+    const res = await db.query("select count(*) from pg_database");
+    logger.info(
+      `[SETUP] ${res[0].count > 0 ? "PG client ready!" : "PG NOT READY"}`
+    );
 
-    if (process.env.WHITELIST_URL) {
-      logger.info(`loading whitelist`);
-      onlyWhitelist = true;
-      loadWhitelist(process.env.WHITELIST_URL, process.env.WHITELIST_GUILD);
-      loadDistributed(process.env.DISTRIBUTED_URL, process.env.WHITELIST_GUILD);
-    } else {
-      loadPendingEvents();
-    }
+    await loadPendingEvents();
   })();
 });
 
@@ -102,9 +84,8 @@ client.on("message", async (message) => {
   } else if (!message.author.bot) {
     if (message.channel.type === "dm") {
       logger.info(
-        `[ONMSG] DM ${message.channel.type} - ${message.content} from ${message.author.username}`
+        `[MSG] DM ${message.channel.type} - ${message.content} from ${message.author.username}`
       );
-      handlePrivateMessage(message);
 
       if (state.state === states.SETUP && state.user.id === message.author.id) {
         logger.info(
@@ -113,9 +94,11 @@ client.on("message", async (message) => {
           }`
         );
         handleStepAnswer(message);
+      } else {
+        handlePrivateEventMessage(message);
       }
     } else {
-      !onlyWhitelist && handlePublicMessage(message);
+      handlePublicMessage(message);
     }
   }
 });
@@ -144,69 +127,52 @@ const handlePublicMessage = async (message) => {
   );
 
   const bot = client.user;
-  const event = getGuildEvent(message.channel.guild.name);
 
   if (message.mentions.has(bot)) {
+    if (
+      message.content.includes("@everyone") ||
+      message.content.includes("@here")
+    )
+      return "";
     logger.info(`[PUBMSG] ${message.author.username} - Message mentions me`);
     botCommands(message);
-  } else if (eventIsCurrent(event, message.channel.name)) {
-    // In-event message. Respond with reaction and DM
-    handleEventMessage(message);
-  }
-};
-
-const handlePrivateMessage = async (message) => {
-  logger.info(`[PUBMSG] DM ${message.content} from ${message.author.username}`);
-  const setName = process.env.WHITELIST_GUILD + whitelist;
-
-  const isWhiteListed = await memberExist(setName, message.author.username);
-
-  if (onlyWhitelist && isWhiteListed) {
-    logger.info(`[PUBMSG] WHITELISTED ${message.author.username}`);
-
-    // In-event message. Respond with reaction and DM
-    handlePrivateEventMessage(message);
-  } else {
-    logger.info(`[PUBMSG] NOTWHITELISTED ${message.author.username}`);
   }
 };
 
 const botCommands = async (message) => {
-  if (message.member.permissions.has(Discord.Permissions.FLAGS.MANAGE_GUILD)) {
+  // let allowedRole = message.guild.roles.cache.find(x => x.name === 'POAP MASTER')
+  const roleAllowed = message.member.roles.cache.some(r=>["POAP MASTER"].includes(r.name))
+  logger.info(`[BOT] checking role ${roleAllowed}`);
+  if (message.member.permissions.has(Discord.Permissions.FLAGS.MANAGE_GUILD) || roleAllowed) {
     // Check that user is an admin in this guild
-    if (message.content.includes("!setup") && state.state !== states.SETUP) {
+    logger.info(`[BOT] user has permission`);
+    if (message.content.toLowerCase().includes("!setup") && state.state !== states.SETUP) {
       // one at a time
-      logger.info(`[BOT] user has permission`);
       // Get any current record for this guild
-      //state.event = getEvent(message.guild.name);
       // start dialog in PM
       await setupState(message.author, message.channel.guild.name);
-    } else if (message.content.includes("!list")) {
-      logger.info(`[BOT] list event `);
-      const event = getGuildEvent(message.channel.guild.name, false); // Don't auto-create
-      if (event && event.server) {
-        logger.info(`[BOT] event ${JSON.stringify(event)}`);
-        sendDM(message.author, await formattedEvent(event));
-      } else {
-        logger.info(`[BOT] No current event`);
-        sendDM(
-          message.author,
-          `No event is currently set up for ${message.channel.guild.name}. Use the !setup command to set one up.`
-        );
-      }
     } else if (message.content.includes("!status")) {
       logger.info(`[BOT] status request`);
-      sendDM(message.author, `Current status: ${state.state}`);
-      const event = getGuildEvent(message.channel.guild.name, false); // Don't auto-create
-      if (event && event.server) {
-        sendDM(message.author, `Event: ${await formattedEvent(event)}`);
+      // sendDM(message.author, `Current status: ${state.state}`);
+      const events = await queryHelper.getGuildEvents(
+        db,
+        message.channel.guild.name
+      ); // Don't auto-create
+      if (events && events.length > 0) {
+        events.forEach(async (e) =>
+          sendDM(message.author, `${await formattedEvent(e)}`)
+        );
+        reactMessage(message, "🙌");
       }
-    } else {
-      message.reply(`Commands are: !setup, !list, !status`);
+    } else if (message.content.includes("!instructions") || message.content.includes("!instruction")) {
+      logger.info(`[BOT] instructions request`);
+
+      reactMessage(message, "🤙")
+      message.reply(instructions);
     }
   } else {
     logger.info(`[BOT] user lacks permission, or invalid command`);
-    message.react("❗");
+    // reactMessage(message, "❗");
   }
 };
 
@@ -221,55 +187,46 @@ const handleStepAnswer = async (message) => {
       // Confirm that channel exists
       const chan = await getChannel(state.event.server, answer);
       if (!chan) {
+        const channels = printChannels(state.event.server)
         state.dm.send(
-          `I can't find a channel named ${answer}. Try again? ${
-            state.event.channel || ""
-          }`
+          `I can't find a channel named ${answer}. Try again -> ${channels}`
         );
       } else {
         state.event.channel = answer;
         state.next = steps.START;
         state.dm.send(
-          `Date and time to start? (${state.event.start_time || ""})`
+          `Date and time to START 🛫 ? *Hint: Time in UTC this format 👉  yyyy-mm-dd hh:mm`
         );
       }
       break;
     }
     case steps.START: {
-      if (answer === "-") answer = state.event.start_time;
-      state.event.start_time = answer;
-      state.next = steps.END;
-      state.dm.send(
-        `Date and time to end the event? (${state.event.end_time || ""})`
-      );
+      // TODO vali-date validate date :p
+      if (answer === "-") answer = state.event.start_date;
+      if(!moment(answer).isValid()){
+        state.dm.send(
+          `mmmm ${answer} It's a valid date? Try again 🙏`
+        );
+      } else {
+        state.event.start_date = answer;
+        state.next = steps.END;
+        state.dm.send(
+          `Date and time to END 🛬  the event? (${
+            (moment(state.event.start_date).isValid() && moment(state.event.start_date)
+              .add(1, "h")
+              .format("YYYY-MM-DD HH:mm")) || ""
+          })`
+        );
+      }
       break;
     }
     case steps.END: {
-      if (answer === "-") answer = state.event.end_time;
-      state.event.end_time = answer;
-      state.next = steps.START_MSG;
-      state.dm.send(
-        `Message to publish at the start of the event? (${
-          state.event.start_message || defaultStartMessage
-        })`
-      );
-      break;
-    }
-    case steps.START_MSG: {
       if (answer === "-")
-        answer = state.event.start_message || defaultStartMessage;
-      state.event.start_message = answer;
-      state.next = steps.END_MSG;
-      state.dm.send(
-        `Message to publish to end the event? (${
-          state.event.end_message || defaultEndMessage
-        })`
-      );
-      break;
-    }
-    case steps.END_MSG: {
-      if (answer === "-") answer = state.event.end_message || defaultEndMessage;
-      state.event.end_message = answer;
+        answer = moment(state.event.start_date)
+          .add(1, "h")
+          .format("YYYY-MM-DD HH:mm");
+      
+      state.event.end_date = answer;
       state.next = steps.RESPONSE;
       state.dm.send(
         `Response to send privately to members during the event? (${
@@ -278,37 +235,31 @@ const handleStepAnswer = async (message) => {
       );
       break;
     }
+
     case steps.RESPONSE: {
       if (answer === "-")
         answer = state.event.response_message || defaultResponseMessage;
       state.event.response_message = answer;
-      state.next = steps.REACTION;
-      state.dm.send(
-        `Reaction to public message by channel members during the event? (${
-          state.event.reaction || defaultReaction
-        })`
-      );
-      break;
-    }
-    case steps.REACTION: {
-      if (answer === "-") answer = state.event.reaction || defaultReaction;
-      state.event.reaction = answer;
-      //const emoji = getEmoji(state.event.server, answer);
-      logger.info(`[STEPS] reacting with ${answer}`);
-      await message.react(answer);
       state.next = steps.PASS;
       state.dm.send(
-        `You can add a secret 🔒  pass (like a word, a hash from youtube or a complete link). If you don't need a password just answer with "-"`
+        `Choose secret 🔒  pass (like a word, a hash from youtube or a complete link). This pass is for your users.`
       );
       break;
     }
+
     case steps.PASS: {
-      if (answer === "-") answer = defaultPass;
-      state.event.pass = answer;
-      //const emoji = getEmoji(state.event.server, answer);
-      logger.info(`[STEPS] pass to get the POAP ${answer}`);
-      state.next = steps.FILE;
-      state.dm.send(`Please attach a CSV file containing tokens`);
+      const passAvailable = await queryHelper.isPassAvailable(db, answer);
+      console.log(passAvailable);
+      if (!passAvailable) {
+        state.dm.send(`Please choose another secret pass. Try again 🙏 `);
+      } else {
+        state.event.pass = answer;
+        //const emoji = getEmoji(state.event.server, answer);
+        logger.info(`[STEPS] pass to get the POAP ${answer}`);
+
+        state.next = steps.FILE;
+        state.dm.send(`Please attach a CSV file containing tokens`);
+      }
       break;
     }
     case steps.FILE: {
@@ -318,16 +269,20 @@ const handleStepAnswer = async (message) => {
         const ma = message.attachments.first();
         logger.info(`[STEPS] File ${ma.name} ${ma.url} ${ma.id} is attached`);
         state.event.file_url = ma.url;
-        let total_count = await readFile(ma.url, state.event.server);
+        let total_count = await readFile(ma.url, state.event.uuid);
         // Report number of codes added
-        state.dm.send(`${total_count} codes added`);
+        state.dm.send(`DONE! codes added`);
       }
       state.next = steps.NONE;
       state.dm.send(
         `Thank you. That's everything. I'll start the event at the appointed time.`
       );
       clearTimeout(state.expiry);
-      await saveEvent(state.event);
+      await queryHelper
+        .saveEvent(db, state.event, message.author.username)
+        .catch((error) => {
+          console.log(error);
+        });
       // Set timer for event start
       startEventTimer(state.event);
       clearSetup();
@@ -337,147 +292,65 @@ const handleStepAnswer = async (message) => {
 };
 
 const handlePrivateEventMessage = async (message) => {
-  // get event
-  let event = process.env.WHITELIST_GUILD;
-  logger.info(
-    `[EVENTMSG] is ${process.env.PASS_GUILD} in msg: ${message.content}`
-  );
+  // console.log(message);
+  logger.info(`[DM] msg: ${message.content}`);
 
-  const exist = await memberExist(event, message.author.username);
+  const userIsBanned = await isBanned(db, message.author.id);
 
-  // check return 1 if new check return 0 if already added
-  logger.info(
-    `[EVENTMSG] Check redis: ${exist} | ${message.author.username} ${
-      exist == 0 ? "new username" : "not new"
-    }`
-  );
-  // 1) check if the user already exist
+  if (!userIsBanned) {
+    // 1) check if pass is correct and return an event
+    const event = await queryHelper.getEventFromPass(db, message.content);
+    console.log(event);
+    if (event) {
+      const getCode = await queryHelper.checkCodeForEventUsername(
+        db,
+        event.id,
+        message.author.id
+      );
 
-  if (exist == 0) {
-    // 2) pass?
-    if (
-      process.env.PASS_GUILD && (event.pass == "-" ||
-      message.content
-        .toLowerCase()
-        .includes(process.env.PASS_GUILD.toLowerCase()))
-    ) {
-      const check = await addToSet(event, message.author.username);
-      if (check) {
-        logger.info(`[EVENTMSG] sending DM to ${message.author.username}`);
+      getCode && logger.info(`[DM] Code found: ${getCode.code}`);
 
-        const code = await popFromSet(event + codeSet);
-        logger.info(`[SENCODE] Code found: ${code}`);
-        // replace placeholder in message
-        const newMsg =  defaultResponseMessage.replace("{code}", code);
-        // Send DM
-        message
-          .reply(newMsg)
-          .catch((error) =>
-            logger.error(
-              `[EVENTMSG] error with DM ${error.httpStatus} - ${error.message}`
-            )
-          );
-        // Add reaction
-        // await message.react(event.reaction)
-        event.user_count++;
-        logPrivateUserAndCode(event, message.author.username, code);
-      } else {
+      if (getCode && getCode.code) {
         logger.info(
-          `[SENDCODE] ${message.author.username} already has a badge`
+          `[DM] OK for ${message.author.username}/${message.author.id}`
+        );
+
+        console.log(
+          "[DEBBUG] DM",
+          JSON.stringify(message.author),
+          " CODE: ",
+          getCode.code
+        );
+
+        // replace placeholder in message
+        const replyMsg =
+          event && event.response_message
+            ? event.response_message.replace("{code}", getCode.code)
+            : defaultResponseMessage.replace("{code}", getCode.code);
+
+        // Send DM
+        replyMessage(message, replyMsg);
+      } else {
+        reactMessage(message, "🤔");
+        logger.info(
+          `[DM] ${message.author.username}/${message.author.id} already has a badge`
         );
       }
-      // TODO ?? Add to used codes map ??
     } else {
-      logger.info(`[EVENTMSG] sorry wrong pass: ${message.content}`);
-      // now react !
-      message
-        .react("❌")
-        .catch((error) =>
-          logger.error(
-            `[EVENTMSG] error with reaction ${error.httpStatus} - ${error.message}`
-          )
-        );
+      // no events
+      reactMessage(message, "❌");
     }
   } else {
+    // bannedUser, no answer
     logger.info(
-      `[EVENTMSG] we can't continue talking with ${message.author.username}`
+      `[BANNEDUSER] DM ${message.author.username}/${message.author.id}`
     );
   }
-  // Check whether already responded (Redis)
 };
 
-const handleEventMessage = async (message) => {
-  // get event
-  let event = getGuildEvent(message.channel.guild.name);
-  logger.info(`[EVENTMSG] is ${event.pass} in msg: ${message.content}`);
-
-  const exist = await memberExist(event.server, message.author.username);
-
-  // check return 1 if new check return 0 if already added
-  logger.info(
-    `[EVENTMSG] Check redis: ${exist} | ${message.author.username} ${
-      exist == 0 ? "new username" : "not new"
-    }`
-  );
-  // 1) check if the user already exist
-
-  if (exist == 0) {
-    // 2) pass?
-    if (
-      event.pass == "-" ||
-      message.content.toLowerCase().includes(event.pass.toLowerCase())
-    ) {
-      logger.info(`[EVENTMSG] sending welcome to ${message.author.username}`);
-
-      // 3) Say welcome!, the user has DMs open?
-      sendDM(message.author, welcomenMsg)
-        .then(() => {
-          logger.info(`[EVENTMSG] Lets do this ${message.author.username}`);
-          // 4) send code
-          sendCodeToUser(event, message);
-        })
-        .catch(() => {
-          logger.info(
-            `[EVENTMSG] we can't talk with ${message.author.username}`
-          );
-          message.reply(cantDmMsg);
-        });
-      // TODO ?? Add to used codes map ??
-    } else {
-      logger.info(`[EVENTMSG] sorry wrong pass: ${message.content}`);
-      // now react !
-      message
-        .react("❌")
-        .catch((error) =>
-          logger.error(
-            `[EVENTMSG] error with reaction ${error.httpStatus} - ${error.message}`
-          )
-        );
-    }
-  } else {
-    logger.info(
-      `[EVENTMSG] we can't continue talking with ${message.author.username}`
-    );
-  }
-  // Check whether already responded (Redis)
-};
-
-const sendCodeToUser = async (event, message) => {
-  const check = await addToSet(event.server, message.author.username);
-  if (check) {
-    const code = await popFromSet(event.server + codeSet);
-    logger.info(`[SENCODE] Code found: ${code}`);
-    // replace placeholder in message
-    const newMsg = event.response_message.replace("{code}", code);
-    // Send DM
-    sendDM(message.author, newMsg);
-    // Add reaction
-    await message.react(event.reaction);
-    event.user_count++;
-    logUserAndCode(event, message.author.username, code);
-  } else {
-    logger.info(`[SENDCODE] ${message.author.username} already has a badge`);
-  }
+const isBanned = async (db, user_id) => {
+  const isBanned = await queryHelper.getBannedUsersById(db, user_id);
+  return isBanned;
 };
 
 //-------------------------------------------
@@ -496,16 +369,18 @@ const setupState = async (user, guild) => {
   );
   state.dm.send(`To accept the suggested value, respond with "-"`);
   state.dm.send(
-    `First: which channel do you want me to listen to? (${
+    `First: which channel should I speak in public? (${
       state.event.channel || ""
-    })`
+    }) *Hint: only for start and end event`
   );
+  state.event.uuid = uuidv4();
   state.user = user;
   resetExpiry();
 };
 
 const resetExpiry = () => {
-  if (state.expiry) {
+  console.log('setting reset')
+  if (state.state != states.LISTEN) {
     clearTimeout(state.expiry);
     state.expiry = setTimeout(() => {
       state.dm.send(
@@ -528,21 +403,12 @@ const clearSetup = () => {
 // ---------------------------------------------------------------------
 // Event
 
-const eventIsCurrent = (event, channel) => {
-  if (!event) return false;
-  if (event.channel !== channel) return false;
-  return (
-    getMillisecsUntil(event.start_time) < 0 &&
-    getMillisecsUntil(event.end_time) > 0
-  );
-};
-
 const startEventTimer = (event) => {
   // get seconds until event start
-  const millisecs = getMillisecsUntil(event.start_time);
+  const millisecs = getMillisecsUntil(event.start_date);
   if (millisecs >= 0) {
     logger.info(
-      `[TIMER] Event starting at ${event.start_time}, in ${
+      `[TIMER] Event starting at ${event.start_date}, in ${
         millisecs / 1000
       } secs`
     );
@@ -552,19 +418,12 @@ const startEventTimer = (event) => {
 };
 
 const startEvent = async (event) => {
-  logger.info(`[EVENT] started: ${JSON.stringify(event)}`);
-  event.user_count = 0;
+  logger.info(`[EVENT] started: ${JSON.stringify(event.server)}`);
   // Send the start message to the channel
-  sendMessageToChannel(event.server, event.channel, event.start_message);
-
-  // Set reaction emoji
-  //event.reaction_emoji = getemoji(event.server, event.reaction);
-
-  // Initialise redis set
-  // await clearEventSet(event.server);
+  sendMessageToChannel(event.server, event.channel, defaultStartMessage);
 
   // Set timer for event end
-  const millisecs = getMillisecsUntil(event.end_time);
+  const millisecs = getMillisecsUntil(event.end_date);
   logger.info(`[EVENT] ending in ${millisecs / 1000} secs`);
   state.endEventTimer = setTimeout((ev) => endEvent(ev), millisecs, event);
 };
@@ -577,17 +436,16 @@ const endEvent = async (event) => {
   logger.info(`[EVENT] ended: ${JSON.stringify(event)}`);
   state.state = states.LISTEN;
   // send the event end message
-  sendMessageToChannel(event.server, event.channel, event.end_message);
-  updateEventUserCount(event);
+  sendMessageToChannel(event.server, event.channel, defaultEndMessage);
 };
 
 const formattedEvent = async (event) => {
   if (!event || !event.server) return "";
 
-  let ms = getMillisecsUntil(event.start_time);
+  let ms = getMillisecsUntil(event.start_date);
   let pending = `Event will start in ${ms / 1000} seconds`;
   if (ms < 0) {
-    ms = getMillisecsUntil(event.end_time);
+    ms = getMillisecsUntil(event.end_date);
     if (ms < 0) {
       pending = "Event finished";
     } else {
@@ -595,18 +453,20 @@ const formattedEvent = async (event) => {
     }
   }
 
+  const totalCodes = await queryHelper.countTotalCodes(db, event.id);
+  const claimedCodes = await queryHelper.countClaimedCodes(db, event.id);
+
   return `Event in guild: ${event.server}
     Channel: ${event.channel}
-    Start: ${event.start_time}
-    End: ${event.end_time}
-    Event start message: ${event.start_message}
-    Event end message: ${event.end_message}
+    Start: ${event.start_date}
+    End: ${event.end_date}
+    Event start message: ${defaultStartMessage}
+    Event end message: ${defaultEndMessage}
     Response to member messages: ${event.response_message}
-    Reaction to awarded messages: ${event.reaction}
     Pass to get the code: ${event.pass}
-    Data url: ${event.file_url}
-    Codes available: ${await setSize(event.server + codeSet)}
-    Members awarded: ${event.user_count}
+    Codes url: ${event.file_url}
+    Total Codes: ${totalCodes && totalCodes.count}
+    Claimed Codes: ${claimedCodes && claimedCodes.count}
     ${pending}`;
 };
 
@@ -615,7 +475,6 @@ const getGuildEvent = (guild, autoCreate = true) => {
     if (!autoCreate) return false;
     guildEvents.set(guild, {
       server: guild,
-      user_count: 0,
     });
   }
   return guildEvents.get(guild);
@@ -652,6 +511,15 @@ const getChannel = (guildName, channelName) => {
   return channel;
 };
 
+const printChannels = (guildName) => {
+  const guild = getGuild(guildName);
+  if (!guild) {
+    return false;
+  }
+  const channels = guild.channels.cache.map( chan => `${chan},` ).join(' ');
+  return channels;
+};
+
 const getGuild = (guildName) => {
   const guild = client.guilds.cache.find((guild) => guild.name === guildName);
   if (!guild) {
@@ -661,102 +529,61 @@ const getGuild = (guildName) => {
   return guild;
 };
 
-const getEmoji = (guildName, emojiName) => {
-  // Set reaction emoji
-  const guild = getGuild(guildName);
-  if (guild) {
-    logger.info(`looking for ${emojiName}`);
-    let emoji = guild.emojis.cache.find(
-      (emoji) => emoji.identifier === emojiName
+const replyMessage = async (message, sendMessage) => {
+  message
+    .reply(sendMessage)
+    .catch((error) =>
+      logger.error(`[DM] error with DM ${error.httpStatus} - ${error.message}`)
     );
-    if (!emoji) {
-      emoji = client.emojis.cache.find(
-        (emoji) => emoji.identifier === emojiName
-      );
-    }
-    if (emoji) {
-      logger.info(
-        `[EMOJI] Found emoji ${emoji.toString()} id ${emoji.identifier}`
-      );
+};
+
+const reactMessage = async (message, reaction) => {
+  message
+    .react(reaction)
+    .catch((error) =>
+      logger.error(
+        `[EVENTMSG] error with reaction ${error.httpStatus} - ${error.message}`
+      )
+    );
+};
+
+//-------------------------------------------------------------------------------------------------
+
+const loadPendingEvents = async () => {
+  // read all events that will start or end in the future.
+  try {
+    let res = await queryHelper.getFutureActiveEvents(db);
+    // console.log(res)
+    res &&
+      logger.info(`[PG] Active events: ${JSON.stringify(res && res.length)}`);
+    if (res && res.length > 0) {
+      // start timer for each one.
+      res.forEach(async (row) => {
+        logger.info(
+          `Active event: ${row.id} | ${row.start_date} - ${row.end_date}`
+        );
+        startEventTimer(row);
+      });
     } else {
-      logger.info(
-        `[EMOJI] ${emojiName} not found. Guild emojis ${JSON.stringify(
-          guild.emojis.cache
-        )} ${JSON.stringify(client.emojis.cache)} `
-      );
+      logger.info("[PG] No pending events");
     }
+  } catch (err) {
+    logger.error(`[PG] Error while getting event: ${err}`);
   }
-  return false;
 };
 
-const loadWhitelist = async (url, guild) => {
+const readFile = async (url, uuid) => {
   return new Promise(async (resolve, reject) => {
     try {
       const res = await axios.get(url);
-      const setName = guild + whitelist;
-      logger.info(`[WHITELIST] setName: ${setName}`);
       let count = 0;
       csv
         .parseString(res.data, { headers: false })
-        .on("data", function (code) {
+        .on("data", async function (code) {
           if (code.length) {
+            await queryHelper.addCode(db, uuid, code[0]);
             logger.info(`-> code added: ${code}`);
             count += 1;
-            addToSet(setName, code);
-          }
-        })
-        .on("end", function () {
-          logger.info(`[WHITELIST] whitelisted  ${count}`);
-          resolve(count);
-        })
-        .on("error", (error) => logger.error(error));
-    } catch (err) {
-      logger.error(`[WHITELIST] Error reading file: ${err}`);
-    }
-  });
-};
-
-const loadDistributed = async (url, guild) => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const res = await axios.get(url);
-      const setName = guild;
-      logger.info(`[DISTRIBUTED] setName: ${setName}`);
-      let count = 0;
-      csv
-        .parseString(res.data, { headers: false })
-        .on("data", function (code) {
-          if (code.length) {
-            logger.info(`-> code added: ${code}`);
-            count += 1;
-            addToSet(setName, code);
-          }
-        })
-        .on("end", function () {
-          logger.info(`[DISTRIBUTED] whitelisted  ${count}`);
-          resolve(count);
-        })
-        .on("error", (error) => logger.error(error));
-    } catch (err) {
-      logger.error(`[DISTRIBUTED] Error reading file: ${err}`);
-    }
-  });
-};
-
-const readFile = async (url, guild) => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const res = await axios.get(url);
-      const setName = guild + codeSet;
-      logger.info(`[CODES] setName: ${setName}`);
-      let count = 0;
-      csv
-        .parseString(res.data, { headers: false })
-        .on("data", function (code) {
-          if (code.length) {
-            logger.info(`-> code added: ${code}`);
-            count += 1;
-            addToSet(setName, code);
           }
         })
         .on("end", function () {
@@ -768,240 +595,6 @@ const readFile = async (url, guild) => {
       logger.error(`[CODES] Error reading file: ${err}`);
     }
   });
-};
-
-//-------------------------------------------------------------------------------------------------
-// DB functions
-pgClient.on("end", () => {
-  dbConnected = false;
-});
-
-const checkAndConnectDB = async () => {
-  if (!dbConnected) await pgClient.connect();
-};
-
-const getEvent = async (guild) => {
-  try {
-    await checkAndConnectDB();
-    const res = await pgClient.query(
-      "SELECT * FROM event WHERE server = $1::text",
-      [guild]
-    );
-    logger.info(`[EVENT] retrieved from DB: ${JSON.stringify(res.rows[0])}`);
-    //await pgClient.end();
-    if (res.rows.length > 0) {
-      return res.rows[0];
-    } else {
-      return {};
-    }
-  } catch (err) {
-    logger.error(`[EVENT] Error while getting event: ${err}`);
-    return {};
-  }
-};
-
-const saveEvent = async (event) => {
-  try {
-    //await pgClient.connect();
-    await checkAndConnectDB();
-    let res;
-    let oldEvent = await getEvent(event.server);
-    if (oldEvent.id) {
-      // UPDATE
-      logger.info(
-        `[PG] Updating... ${oldEvent.id} to ${JSON.stringify(event)}`
-      );
-      res = await pgClient.query(
-        "UPDATE event " +
-          "SET channel=$1, start_time=$2, end_time=$3, start_message=$4, end_message=$5, response_message=$6, reaction=$7, pass=$8, user_count=$9, file_url=$10 " +
-          "WHERE id=$11",
-        [
-          event.channel,
-          event.start_time,
-          event.end_time,
-          event.start_message,
-          event.end_message,
-          event.response_message,
-          event.reaction,
-          event.pass,
-          event.user_count,
-          event.file_url,
-          oldEvent.id,
-        ]
-      );
-    } else {
-      const uuid = uuidv4();
-      logger.info(`[PG] Inserting... ${uuid} to ${JSON.stringify(event)}`);
-      // INSERT
-      res = await pgClient.query(
-        "INSERT INTO event " +
-          "(id, server, channel, start_time, end_time, start_message, end_message, response_message, reaction, pass, user_count, file_url) " +
-          "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-        [
-          uuid,
-          event.server,
-          event.channel,
-          event.start_time,
-          event.end_time,
-          event.start_message,
-          event.end_message,
-          event.response_message,
-          event.reaction,
-          event.pass,
-          0,
-          event.file_url,
-        ]
-      );
-    }
-  } catch (err) {
-    logger.error(`[PG] Error saving event: ${err}`);
-  }
-};
-
-const updateEventUserCount = async (event) => {
-  try {
-    //await pgClient.connect();
-    await checkAndConnectDB();
-    let res;
-    if (event.id) {
-      // UPDATE
-      logger.info(
-        `[PG] Updating user count ... ${event.id} to ${event.user_count}`
-      );
-      res = await pgClient.query(
-        "UPDATE event " + "SET user_count=$1 " + "WHERE id=$2",
-        [event.user_count, event.id]
-      );
-    }
-  } catch (err) {
-    logger.error(`[PG] Error updating event: ${err}`);
-  }
-};
-
-const logUserAndCode = async (event, username, code) => {
-  try {
-    let date = new Date();
-    let res;
-    await checkAndConnectDB();
-    // ADD LOG
-    logger.info(
-      `[PG] adding log to ${username} to ${event.server}|${event.channel}`
-    );
-    res = await pgClient.query(
-      "INSERT INTO logs " +
-        "(server, channel, username, code, date)" +
-        "VALUES ($1, $2, $3, $4, $5)",
-      [event.server, event.channel, username, code, date]
-    );
-  } catch (err) {
-    logger.error(`[PG] Error logging code: ${err}`);
-  }
-};
-
-const logPrivateUserAndCode = async (event, username, code) => {
-  try {
-    let date = new Date();
-    let res;
-    await checkAndConnectDB();
-    // ADD LOG
-    logger.info(
-      `[PG] adding log to ${username} to ${event}|DM`
-    );
-    res = await pgClient.query(
-      "INSERT INTO logs " +
-        "(server, channel, username, code, date)" +
-        "VALUES ($1, $2, $3, $4, $5)",
-      [event, 'DM', username, code, date]
-    );
-  } catch (err) {
-    logger.error(`[PG] Error logging code: ${err}`);
-  }
-};
-
-
-
-const loadPendingEvents = async () => {
-  // read all events that will start or end in the future.
-  try {
-    await checkAndConnectDB();
-    const res = await pgClient.query(
-      "SELECT * FROM event WHERE end_time >= $1::date",
-      [new Date()]
-    );
-    logger.info(`[PG] Future events loaded: ${JSON.stringify(res.rows)}`);
-    if (res.rows.length > 0) {
-      // start timer for each one.
-      res.rows.forEach(async (row) => {
-        logger.info(`Adding to map: ${row.server}`);
-        let size = await setSize(row.server + codeSet);
-        size && logger.error(`CAUTION! FOUND OLD EVENTS FOR: ${row.server}`);
-        guildEvents.set(row.server, row);
-        // if (row.file_url) {
-        //   readFile(row.file_url, row.server);
-        // }
-        startEventTimer(row);
-      });
-    } else {
-      logger.info("[PG] No pending events");
-    }
-  } catch (err) {
-    logger.error(`[PG] Error while getting event: ${err}`);
-  }
-};
-
-function uuidv4() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-    var r = (Math.random() * 16) | 0,
-      v = c == "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-//-------------------------------------------------------------------------------------------
-// Redis
-
-const saddAsync = promisify(redisClient.sadd).bind(redisClient);
-const sismemberAsync = promisify(redisClient.sismember).bind(redisClient);
-//const sismemberAsync = promisify(redisClient.sismember).bind(redisClient);
-const delAsync = promisify(redisClient.del).bind(redisClient);
-const scardAsync = promisify(redisClient.scard).bind(redisClient);
-const spopAsync = promisify(redisClient.spop).bind(redisClient);
-
-redisClient.on("connect", () => {
-  logger.info(`[SETUP] Redis client connected`);
-});
-
-const clearEventSet = async (guild) => {
-  // remove any members from the guild's set. Called prior to an event's start.
-  const rem = await delAsync(guild, (err, result) => {
-    logger.info(`Set deleted: ${guild} - ${err} -  ${result} keys removed`);
-    return result;
-  });
-  logger.info(`Set removed ${rem}`);
-};
-
-const memberExist = async (guild, member) => {
-  // adds a user to an event's set
-  // returns 0 if already in the set, 1 otherwise
-  let c = await sismemberAsync(guild, member);
-  logger.info(`[REDDIS] sismemberAsync ${member} => ${c}`);
-  return c;
-};
-
-const addToSet = async (guild, member) => {
-  // adds a user to an event's set
-  // returns 0 if already in the set, 1 otherwise
-  let c = await saddAsync(guild, member);
-  logger.info(`[REDDIS] addToSet ${member} => ${c}`);
-  return c;
-};
-
-const setSize = async (setName) => {
-  return scardAsync(setName);
-};
-
-const popFromSet = async (setName) => {
-  return spopAsync(setName);
 };
 
 //-------------------------------------------------------------------------------------------
