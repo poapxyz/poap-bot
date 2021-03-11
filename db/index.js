@@ -172,7 +172,7 @@ async function isPassAvailable(db, pass) {
 
 const isMsgTheSame = (message, eventPass) => {
   let messagePass = message.replace('!', '').replace(/ /g, "")
-  return eventPass.toLowerCase().includes(messagePass.toLowerCase())
+  return eventPass.localeCompare(messagePass, undefined, { sensitivity: 'base' }) === 0;
 }
 
 module.exports = {
