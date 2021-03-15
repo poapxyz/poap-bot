@@ -9,7 +9,7 @@ During active events, users only need to sent a DM to @POAP-bot
 3. Your POAP claim link code will be sent as a reply from the @POAP-bot.
 
 Example:
-![POAP-bot example](https://res.cloudinary.com/dbiqkiypz/image/upload/v1604692202/Screen_Shot_2020-11-06_at_16.45.29_ylsa5z.png)
+![POAP-bot example](https://res.cloudinary.com/dbiqkiypz/image/upload/v1615833420/Screen_Shot_2021-03-15_at_15.35.22_iggkoj.png)
 
 ## Add @POAP-bot to your server.
 
