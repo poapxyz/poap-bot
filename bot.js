@@ -258,7 +258,7 @@ const handleStepAnswer = async (message) => {
         logger.info(`[STEPS] pass to get the POAP ${answer}`);
 
         state.next = steps.FILE;
-        state.dm.send(`Please attach a CSV file containing tokens`);
+        state.dm.send(`Please attach your links.txt file`);
       }
       break;
     }
