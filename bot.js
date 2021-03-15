@@ -183,7 +183,7 @@ const handleStepAnswer = async (message) => {
     case steps.CHANNEL: {
       logger.info(`[STEPS] answer ${state.event.id}`);
       if (answer === "-") answer = state.event.channel;
-      if (answer.startsWith("#")) answer = answer.substring(1);
+      if (answer && answer.startsWith("#")) answer = answer.substring(1);
       // Confirm that channel exists
       const chan = await getChannel(state.event.server, answer);
       if (!chan) {
