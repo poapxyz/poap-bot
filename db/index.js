@@ -94,7 +94,21 @@ async function checkCodeForEventUsername(db, event_id, username) {
   const now = new Date();
   const res = await db
     .task(async (t) => {
-      // TODO check whitelisted for event_id
+      
+      const event = await t.one(
+        "SELECT is_whitelisted FROM events where id = $1",
+        [event_id]
+      );
+
+      console.log(`[DB] checking if ${event_id} is_whitelisted: ${event.is_whitelisted}`);
+
+      if (event.is_whitelisted) {
+        const user_whitelisted = await t.one(
+          "SELECT * FROM whitelist WHERE user_id = $1 AND event_id = $2",
+          [username, event_id]
+        );
+      }
+
       await t.none(
         "SELECT * FROM codes WHERE event_id = $1 AND username = $2::text",
         [event_id, username]

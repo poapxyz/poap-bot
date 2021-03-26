@@ -312,7 +312,7 @@ const handlePrivateEventMessage = async (message) => {
 
       if (getCode && getCode.code) {
         logger.info(
-          `[DM] OK for ${message.author.username}/${message.author.id}`
+          `[DM] OK for ${message.author.username}/${message.author.id} with code: ${getCode.code}`
         );
 
         console.log(
