@@ -122,9 +122,9 @@ const sendDM = async (user, message) => {
 // Message handling
 
 const handlePublicMessage = async (message) => {
-  logger.info(
-    `[PUBMSG] ${message.content} from ${message.author.username} in guild ${message.channel.guild.name} #${message.channel.name}`
-  );
+  // logger.info(
+  //   `[PUBMSG] ${message.content} from ${message.author.username} in guild ${message.channel.guild.name} #${message.channel.name}`
+  // );
 
   const bot = client.user;
 
