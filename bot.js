@@ -22,7 +22,7 @@ const logger = pino({
     messageKey: "msg", // --messageKey
     levelKey: "level", // --levelKey
     timestampKey: "time", // --timestampKey
-    translateTime: false, // --translateTime
+    translateTime: true, // --translateTime
     ignore: "pid,hostname", // --ignore,
   },
 });
@@ -134,7 +134,7 @@ const handlePublicMessage = async (message) => {
       message.content.includes("@here")
     )
       return "";
-    logger.info(`[PUBMSG] ${message.author.username} - Message mentions me`);
+    logger.info(`[PUBMSG] ${message.author.username} - Message mentions me with: ${message.content}`);
     botCommands(message);
   }
 };
