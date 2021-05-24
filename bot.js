@@ -14,6 +14,13 @@ const db = pgPromise()({
   database: process.env.DB_DATABASE || "",
 });
 
+const dbv2 = (!process.env.DBV2_HOST) ? null : pgPromise()({
+  host: process.env.DBV2_HOST,
+  user: process.env.DBV2_USER || "postgres",
+  password: process.env.DBV2_PASSWORD || "postgres",
+  database: process.env.DBV2_DATABASE || "",
+});
+
 const logger = pino({
   prettyPrint: {
     colorize: true, // --colorize

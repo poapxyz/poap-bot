@@ -103,3 +103,7 @@ dist
 # TernJS port file
 .tern-port
 *.lock
+.idea/modules.xml
+.idea/poap-bot.iml
+.idea/vcs.xml
+.idea/workspace.xml
