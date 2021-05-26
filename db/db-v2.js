@@ -25,12 +25,12 @@ async function checkCodeForEventUsername(db, event_id, username) {
 
 async function getActiveEventByPass(db, eventPass){
     const now = new Date();
-    return await this.db.oneOrNone("SELECT * FROM events WHERE pass = $1::text AND is_active = $2::boolean AND end_date >= $3::timestamp AND start_date <= $3::timestamp",
+    return await db.oneOrNone("SELECT * FROM events WHERE pass = $1::text AND is_active = $2::boolean AND end_date >= $3::timestamp AND start_date <= $3::timestamp",
         [eventPass, true, now]);
 }
 
 async function getEventByPass(db, eventPass){
-    return await this.db.oneOrNone("SELECT * FROM events WHERE pass = $1::text", [eventPass]);
+    return await db.oneOrNone("SELECT * FROM events WHERE pass = $1::text", [eventPass]);
 }
 
 module.exports = {

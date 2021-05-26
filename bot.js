@@ -366,7 +366,7 @@ const checkPassInNewBot = async (message) => {
     logger.error(`No .env variable defined for v2`);
     return null;
   }
-  const eventPass = message.replace('!', '').replace(/ /g, "");
+  const eventPass = message.content.replace('!', '').replace(/ /g, "");
   try{
     const event = await queryHelper.v2.getEventByPass(dbv2, eventPass);
     if(!event){
@@ -378,25 +378,25 @@ const checkPassInNewBot = async (message) => {
       return "Event is no longer active";
     }
 
-    const getCode = await queryHelper.v2.checkCodeForEventUsername(dbv2, event.id,message.author.id);
-    if(!getCode)
+    const claimedCode = await queryHelper.v2.checkCodeForEventUsername(dbv2, event.id,message.author.id);
+    if(!claimedCode)
       return "There are no more codes available";
 
     logger.info(
-        `[DM-V2] OK for ${message.author.username}/${message.author.id} with code from new bot v2: ${getCode.code}`
+        `[DM-V2] OK for ${message.author.username}/${message.author.id} with code from new bot v2: ${claimedCode}`
     );
 
     console.log(
         "[DEBUG] DM-V2",
         JSON.stringify(message.author),
         " CODE: ",
-        getCode.code
+        claimedCode
     );
 
     // replace placeholder in message
     return event && event.response_message
-        ? event.response_message.replace("{code}", getCode.code)
-        : defaultResponseMessage.replace("{code}", getCode.code);
+        ? event.response_message.replace("{code}", claimedCode)
+        : defaultResponseMessage.replace("{code}", claimedCode);
   }catch (e){
     logger.error(`[DM-V2] error with DM, ${e}`);
     return null;
