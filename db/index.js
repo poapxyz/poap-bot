@@ -1,3 +1,5 @@
+export const v2 = require("./db-v2");
+
 async function getRealtimeActiveEvents(db) {
   const now = new Date();
 
@@ -201,4 +203,5 @@ module.exports = {
   addCode,
   getFutureActiveEvents,
   getBannedUsersById,
+    v2,
 };

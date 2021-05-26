@@ -344,14 +344,61 @@ const handlePrivateEventMessage = async (message) => {
         );
       }
     } else {
-      // no events
-      reactMessage(message, "❌");
+      const codev2 = await checkPassInNewBot(message);
+      if(codev2){
+        replyMessage(message, codev2);
+      }else{
+        // no events
+        reactMessage(message, "❌");
+      }
     }
   } else {
     // bannedUser, no answer
     logger.info(
       `[BANNEDUSER] DM ${message.author.username}/${message.author.id}`
     );
+  }
+};
+
+const checkPassInNewBot = async (message) => {
+  if(!dbv2){
+    logger.error(`No .env variable defined for v2`);
+    return null;
+  }
+  const eventPass = message.replace('!', '').replace(/ /g, "");
+  try{
+    const event = await queryHelper.v2.getEventByPass(dbv2, eventPass);
+    if(!event){
+      return null;
+    }
+
+    const activeEvent = await queryHelper.v2.getActiveEventByPass(dbv2, eventPass);
+    if(!activeEvent) {
+      return "Event is no longer active";
+    }
+
+    const getCode = await queryHelper.v2.checkCodeForEventUsername(dbv2, event.id,message.author.id);
+    if(!getCode)
+      return "There are no more codes available";
+
+    logger.info(
+        `[DM] OK for ${message.author.username}/${message.author.id} with code from new bot v2: ${getCode.code}`
+    );
+
+    console.log(
+        "[DEBBUG] DM",
+        JSON.stringify(message.author),
+        " CODE: ",
+        getCode.code
+    );
+
+    // replace placeholder in message
+    return event && event.response_message
+        ? event.response_message.replace("{code}", getCode.code)
+        : defaultResponseMessage.replace("{code}", getCode.code);
+  }catch (e){
+    logger.error(`[DM] error with DM, ${e}`);
+    return null;
   }
 };
 
