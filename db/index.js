@@ -1,4 +1,4 @@
-export const v2 = require("./db-v2");
+const v2 = require("./db-v2");
 
 async function getRealtimeActiveEvents(db) {
   const now = new Date();

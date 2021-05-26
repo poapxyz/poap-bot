@@ -6,6 +6,7 @@ const moment = require("moment");
 const queryHelper = require("./db");
 const pgPromise = require("pg-promise");
 const { v4: uuidv4 } = require("uuid");
+require('dotenv').config();
 
 const db = pgPromise()({
   host: process.env.DB_HOST || "localhost",
@@ -382,11 +383,11 @@ const checkPassInNewBot = async (message) => {
       return "There are no more codes available";
 
     logger.info(
-        `[DM] OK for ${message.author.username}/${message.author.id} with code from new bot v2: ${getCode.code}`
+        `[DM-V2] OK for ${message.author.username}/${message.author.id} with code from new bot v2: ${getCode.code}`
     );
 
     console.log(
-        "[DEBBUG] DM",
+        "[DEBUG] DM-V2",
         JSON.stringify(message.author),
         " CODE: ",
         getCode.code
@@ -397,7 +398,7 @@ const checkPassInNewBot = async (message) => {
         ? event.response_message.replace("{code}", getCode.code)
         : defaultResponseMessage.replace("{code}", getCode.code);
   }catch (e){
-    logger.error(`[DM] error with DM, ${e}`);
+    logger.error(`[DM-V2] error with DM, ${e}`);
     return null;
   }
 };
