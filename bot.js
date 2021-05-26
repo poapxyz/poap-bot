@@ -6,12 +6,20 @@ const moment = require("moment");
 const queryHelper = require("./db");
 const pgPromise = require("pg-promise");
 const { v4: uuidv4 } = require("uuid");
+require('dotenv').config();
 
 const db = pgPromise()({
   host: process.env.DB_HOST || "localhost",
   user: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
   database: process.env.DB_DATABASE || "",
+});
+
+const dbv2 = (!process.env.DBV2_HOST) ? null : pgPromise()({
+  host: process.env.DBV2_HOST,
+  user: process.env.DBV2_USER || "postgres",
+  password: process.env.DBV2_PASSWORD || "postgres",
+  database: process.env.DBV2_DATABASE || "",
 });
 
 const logger = pino({
@@ -337,14 +345,61 @@ const handlePrivateEventMessage = async (message) => {
         );
       }
     } else {
-      // no events
-      reactMessage(message, "❌");
+      const codev2 = await checkPassInNewBot(message);
+      if(codev2){
+        replyMessage(message, codev2);
+      }else{
+        // no events
+        reactMessage(message, "❌");
+      }
     }
   } else {
     // bannedUser, no answer
     logger.info(
       `[BANNEDUSER] DM ${message.author.username}/${message.author.id}`
     );
+  }
+};
+
+const checkPassInNewBot = async (message) => {
+  if(!dbv2){
+    logger.error(`No .env variable defined for v2`);
+    return null;
+  }
+  const eventPass = message.content.replace('!', '').replace(/ /g, "");
+  try{
+    const event = await queryHelper.v2.getEventByPass(dbv2, eventPass);
+    if(!event){
+      return null;
+    }
+
+    const activeEvent = await queryHelper.v2.getActiveEventByPass(dbv2, eventPass);
+    if(!activeEvent) {
+      return "Event is no longer active";
+    }
+
+    const claimedCode = await queryHelper.v2.checkCodeForEventUsername(dbv2, event.id,message.author.id);
+    if(!claimedCode)
+      return "There are no more codes available";
+
+    logger.info(
+        `[DM-V2] OK for ${message.author.username}/${message.author.id} with code from new bot v2: ${claimedCode}`
+    );
+
+    console.log(
+        "[DEBUG] DM-V2",
+        JSON.stringify(message.author),
+        " CODE: ",
+        claimedCode
+    );
+
+    // replace placeholder in message
+    return event && event.response_message
+        ? event.response_message.replace("{code}", claimedCode)
+        : defaultResponseMessage.replace("{code}", claimedCode);
+  }catch (e){
+    logger.error(`[DM-V2] error with DM, ${e}`);
+    return null;
   }
 };
 
