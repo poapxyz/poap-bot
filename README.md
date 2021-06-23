@@ -15,7 +15,7 @@ The POAP-Bot can be installed on any Discord Server and used to automatically di
 1. **Add the POAP-Bot to your Discord Server** by [clicking this link.](https://discord.com/api/oauth2/authorize?client_id=764554729476194315&permissions=2112&scope=bot)
 <br/>
 
-![Install POAP Bot to Discord](https://ethstaker.cc/wp-content/uploads/2021/06/poap-bot-install.gif)
+![Install POAP Bot to Discord](./doc/poap-bot-install.gif)
 
 `NOTE: The link will open to discord.com in a browser page. Once you sign in (which may happen automatically if credentials have been cached) you can select the server you want the POAP-Bot to be installed on. Approve permissions needed for the POAP-Bot to function, and the bot will appear as a new member of the server as POAP-bot#0094.`
 
@@ -41,7 +41,7 @@ The POAP-Bot has one main commands: **`!setup`**. Instructions on how to use thi
 ### Configuring The POAP-Bot For An Event #setup-bot
 
 1. Call the POAP-Bot by **_mentioning_** it with the command: **`!setup`**
-![Calling The POAP-Bot](https://ethstaker.cc/wp-content/uploads/2021/06/poap-wizard.gif)
+![Calling The POAP-Bot](./doc/poap-wizard.gif)
 2. After calling **`!setup`** The POAP-Bot will initiate a Wizard via Direct Message, follow the instructions based on the Wizard. A few items to note when going through the wizard:
     - **Public Notification channel:** You can choose any channel on your Discord Server to use as a Notification Channel. The POAP-Bot uses this channel to announce when the POAP Claim Window has started and ended. You can use the **`[-]`** command to use the POAP-Bot defaults. 
     - **Start/End Date & Time:** This is the time period that the bot will accept codewords to distribute claim codes on your Discord Server. This can be as short as a few minutes or as long as a few weeks. Once the End Date/Time has been reached the POAP-Bot will stop distributing claim codes, _even if there are valid claim codes remaining._**The POAP-Bot uses Central European Summer Time GMT+0200.**
