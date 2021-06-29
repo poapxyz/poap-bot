@@ -77,6 +77,21 @@ async function countClaimedCodes(db, event_id) {
   return res;
 }
 
+async function getFutureEventFromPass(db, messageContent) {
+    const events = await getFutureActiveEvents(db);
+    // check for similar strings on active events pass
+
+    const eventSelected = events.find((e) =>
+        isMsgTheSame(messageContent, e.pass)
+    );
+
+    console.log(
+        `[DB] ${eventSelected && eventSelected.length} for pass: ${messageContent}`
+    );
+
+    return eventSelected;
+}
+
 async function getEventFromPass(db, messageContent) {
   const events = await getRealtimeActiveEvents(db);
   // check for similar strings on active events pass
@@ -194,6 +209,7 @@ const isMsgTheSame = (message, eventPass) => {
 module.exports = {
   getRealtimeActiveEvents,
   getEventFromPass,
+  getFutureEventFromPass,
   checkCodeForEventUsername,
   getGuildEvents,
   countTotalCodes,

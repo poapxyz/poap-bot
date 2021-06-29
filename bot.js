@@ -161,20 +161,9 @@ const botCommands = async (message) => {
       await setupState(message.author, message.channel.guild.name);
     } else if (message.content.includes("!status")) {
       logger.info(`[BOT] status request`);
-      // sendDM(message.author, `Current status: ${state.state}`);
-      const events = await queryHelper.getGuildEvents(
-        db,
-        message.channel.guild.name
-      ); // Don't auto-create
-      if (events && events.length > 0) {
-        events.forEach(async (e) =>
-          sendDM(message.author, `${await formattedEvent(e)}`)
-        );
-        reactMessage(message, "🙌");
-      }
+      await handleStatus(message);
     } else if (message.content.includes("!instructions") || message.content.includes("!instruction")) {
       logger.info(`[BOT] instructions request`);
-
       reactMessage(message, "🤙")
       message.reply(instructions);
     }
@@ -182,6 +171,22 @@ const botCommands = async (message) => {
     logger.info(`[BOT] user lacks permission, or invalid command`);
     // reactMessage(message, "❗");
   }
+};
+
+const handleStatus = async(message) =>{
+  // sendDM(message.author, `Current status: ${state.state}`);
+  const events = await queryHelper.getGuildEvents(
+      db,
+      message.channel.guild.name
+  ); // Don't auto-create
+  if (events && events.length > 0) {
+    events.forEach(async (e) =>
+        sendDM(message.author, `${await formattedEvent(e)}`)
+    );
+  } else {
+    sendDM(message.author, `No active events found in the guild`)
+  }
+  return reactMessage(message, "🙌");
 };
 
 const handleStepAnswer = async (message) => {
@@ -302,8 +307,35 @@ const handleStepAnswer = async (message) => {
 const handlePrivateEventMessage = async (message) => {
   // console.log(message);
   logger.info(`[DM] msg: ${message.content}`);
-
   const userIsBanned = await isBanned(db, message.author.id);
+
+  if(message.content.includes("!addcodes")){
+    const pass = message.split(" ").shift().join(" ");
+    logger.info(`[ADDCODES] message trigged with pass ${pass}`);
+
+    const event = await queryHelper.getFutureEventFromPass(db, message.content);
+    if(!event){
+      replyMessage(message,`Please use command with !addcodes {EVENT_PASS}`);
+      // no events
+      return reactMessage(message, "❌");
+    }
+
+    if(event.created_by !== message.author.username){
+      replyMessage(message,`You are not the original author of the event`);
+      return reactMessage(message, "❌");
+    }
+
+    if (message.attachments.size <= 0) {
+      return replyMessage(message,`No file attachment found!`);
+    }
+
+    const ma = message.attachments.first();
+    logger.info(`[ADDCODES] File ${ma.name} ${ma.url} ${ma.id} is attached`);
+    let total_count = await readFile(ma.url, event.id);
+    // Report number of codes added
+    replyMessage(message,`DONE! codes added`);
+    return reactMessage(message, "🙌");
+  }
 
   if (!userIsBanned) {
     // 1) check if pass is correct and return an event
