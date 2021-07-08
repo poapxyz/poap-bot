@@ -356,25 +356,25 @@ const handlePrivateEventMessage = async (message) => {
         message.author.id
       );
 
-      getCode && logger.info(`[DM] Code found: ${getCode.code}`);
+      getCode && logger.info(`[DM] Code found: ${getCode}`);
 
-      if (getCode && getCode.code) {
+      if (getCode) {
         logger.info(
-          `[DM] OK for ${message.author.username}/${message.author.id} with code: ${getCode.code}`
+          `[DM] OK for ${message.author.username}/${message.author.id} with code: ${getCode}`
         );
 
         console.log(
           "[DEBBUG] DM",
           JSON.stringify(message.author),
           " CODE: ",
-          getCode.code
+          getCode
         );
 
         // replace placeholder in message
         const replyMsg =
           event && event.response_message
-            ? event.response_message.replace("{code}", getCode.code)
-            : defaultResponseMessage.replace("{code}", getCode.code);
+            ? event.response_message.replace("{code}", getCode)
+            : defaultResponseMessage.replace("{code}", getCode);
 
         // Send DM
         replyMessage(message, replyMsg);

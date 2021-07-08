@@ -122,14 +122,17 @@ async function checkCodeForEventUsername(db, event_id, username) {
         );
       }
 
-      await t.none(
-        "SELECT * FROM codes WHERE event_id = $1 AND username = $2::text",
-        [event_id, username]
-      );
-      const code = await t.one(
+      let code = await t.oneOrNone(
+        "SELECT code FROM codes WHERE event_id = $1 AND username = $2::numeric;",
+        [event_id, username], (a) => a? a.code : null);
+      if(code){
+          return code;
+      }
+
+      code = await t.one(
         "UPDATE codes SET username = $1, claimed_date = $3::timestamp WHERE code in (SELECT code FROM codes WHERE event_id = $2 AND username IS NULL ORDER BY RANDOM() LIMIT 1) RETURNING code",
-        [username, event_id, now]
-      );
+        [username, event_id, now], (a) => a.code);
+
       console.log(`[DB] checking event: ${event_id}, user: ${username} `);
       return code;
     })
