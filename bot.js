@@ -161,20 +161,9 @@ const botCommands = async (message) => {
       await setupState(message.author, message.channel.guild.name);
     } else if (message.content.includes("!status")) {
       logger.info(`[BOT] status request`);
-      // sendDM(message.author, `Current status: ${state.state}`);
-      const events = await queryHelper.getGuildEvents(
-        db,
-        message.channel.guild.name
-      ); // Don't auto-create
-      if (events && events.length > 0) {
-        events.forEach(async (e) =>
-          sendDM(message.author, `${await formattedEvent(e)}`)
-        );
-        reactMessage(message, "🙌");
-      }
+      await handleStatus(message);
     } else if (message.content.includes("!instructions") || message.content.includes("!instruction")) {
       logger.info(`[BOT] instructions request`);
-
       reactMessage(message, "🤙")
       message.reply(instructions);
     }
@@ -182,6 +171,22 @@ const botCommands = async (message) => {
     logger.info(`[BOT] user lacks permission, or invalid command`);
     // reactMessage(message, "❗");
   }
+};
+
+const handleStatus = async(message) =>{
+  // sendDM(message.author, `Current status: ${state.state}`);
+  const events = await queryHelper.getGuildEvents(
+      db,
+      message.channel.guild.name
+  ); // Don't auto-create
+  if (events && events.length > 0) {
+    events.forEach(async (e) =>
+        sendDM(message.author, `${await formattedEvent(e)}`)
+    );
+  } else {
+    sendDM(message.author, `No active events found in the guild`)
+  }
+  return reactMessage(message, "🙌");
 };
 
 const handleStepAnswer = async (message) => {
@@ -247,6 +252,7 @@ const handleStepAnswer = async (message) => {
     case steps.RESPONSE: {
       if (answer === "-")
         answer = state.event.response_message || defaultResponseMessage;
+
       state.event.response_message = answer;
       state.next = steps.PASS;
       state.dm.send(
@@ -256,6 +262,7 @@ const handleStepAnswer = async (message) => {
     }
 
     case steps.PASS: {
+      answer = answer.replace('!', '').replace(/ /g, "");
       const passAvailable = await queryHelper.isPassAvailable(db, answer);
       console.log(passAvailable);
       if (!passAvailable) {
@@ -302,8 +309,42 @@ const handleStepAnswer = async (message) => {
 const handlePrivateEventMessage = async (message) => {
   // console.log(message);
   logger.info(`[DM] msg: ${message.content}`);
-
   const userIsBanned = await isBanned(db, message.author.id);
+
+  if(message.content.includes("!addcodes")){
+    let argsArray = message.content.split(" ");
+    argsArray.shift(); //remove first element
+    const pass = argsArray.join(" ");
+    logger.info(`[ADDCODES] message trigged with pass ${pass}`);
+    if(!(pass && pass.length > 0)){
+      replyMessage(message,`Please use command with !addcodes {EVENT_PASS}`);
+      // no events
+      return reactMessage(message, "❌");
+    }
+
+    const event = await queryHelper.getFutureEventFromPass(db, pass);
+    if(!event){
+      replyMessage(message,`There are no event with the specified password.`);
+      // no events
+      return reactMessage(message, "❌");
+    }
+
+    if(event.created_by !== message.author.username){
+      replyMessage(message,`You are not the original author of the event`);
+      return reactMessage(message, "❌");
+    }
+
+    if (message.attachments.size <= 0) {
+      return replyMessage(message,`No file attachment found!`);
+    }
+
+    const ma = message.attachments.first();
+    logger.info(`[ADDCODES] File ${ma.name} ${ma.url} ${ma.id} is attached`);
+    let total_count = await readFile(ma.url, event.id);
+    // Report number of codes added
+    replyMessage(message,`DONE! codes added`);
+    return reactMessage(message, "🙌");
+  }
 
   if (!userIsBanned) {
     // 1) check if pass is correct and return an event
@@ -316,25 +357,25 @@ const handlePrivateEventMessage = async (message) => {
         message.author.id
       );
 
-      getCode && logger.info(`[DM] Code found: ${getCode.code}`);
+      getCode && logger.info(`[DM] Code found: ${getCode}`);
 
-      if (getCode && getCode.code) {
+      if (getCode) {
         logger.info(
-          `[DM] OK for ${message.author.username}/${message.author.id} with code: ${getCode.code}`
+          `[DM] OK for ${message.author.username}/${message.author.id} with code: ${getCode}`
         );
 
         console.log(
           "[DEBBUG] DM",
           JSON.stringify(message.author),
           " CODE: ",
-          getCode.code
+          getCode
         );
 
         // replace placeholder in message
         const replyMsg =
           event && event.response_message
-            ? event.response_message.replace("{code}", getCode.code)
-            : defaultResponseMessage.replace("{code}", getCode.code);
+            ? event.response_message.replace("{code}", getCode)
+            : defaultResponseMessage.replace("{code}", getCode);
 
         // Send DM
         replyMessage(message, replyMsg);
