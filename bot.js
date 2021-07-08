@@ -261,6 +261,7 @@ const handleStepAnswer = async (message) => {
     }
 
     case steps.PASS: {
+      answer = answer.replace('!', '').replace(/ /g, "");
       const passAvailable = await queryHelper.isPassAvailable(db, answer);
       console.log(passAvailable);
       if (!passAvailable) {
@@ -310,12 +311,19 @@ const handlePrivateEventMessage = async (message) => {
   const userIsBanned = await isBanned(db, message.author.id);
 
   if(message.content.includes("!addcodes")){
-    const pass = message.split(" ").shift().join(" ");
+    let argsArray = message.content.split(" ");
+    argsArray.shift(); //remove first element
+    const pass = argsArray.join(" ");
     logger.info(`[ADDCODES] message trigged with pass ${pass}`);
-
-    const event = await queryHelper.getFutureEventFromPass(db, message.content);
-    if(!event){
+    if(!(pass && pass.length > 0)){
       replyMessage(message,`Please use command with !addcodes {EVENT_PASS}`);
+      // no events
+      return reactMessage(message, "❌");
+    }
+
+    const event = await queryHelper.getFutureEventFromPass(db, pass);
+    if(!event){
+      replyMessage(message,`There are no event with the specified password.`);
       // no events
       return reactMessage(message, "❌");
     }

@@ -80,11 +80,9 @@ async function countClaimedCodes(db, event_id) {
 async function getFutureEventFromPass(db, messageContent) {
     const events = await getFutureActiveEvents(db);
     // check for similar strings on active events pass
-
     const eventSelected = events.find((e) =>
         isMsgTheSame(messageContent, e.pass)
     );
-
     console.log(
         `[DB] ${eventSelected && eventSelected.length} for pass: ${messageContent}`
     );
@@ -95,11 +93,9 @@ async function getFutureEventFromPass(db, messageContent) {
 async function getEventFromPass(db, messageContent) {
   const events = await getRealtimeActiveEvents(db);
   // check for similar strings on active events pass
-
   const eventSelected = events.find((e) =>
     isMsgTheSame(messageContent, e.pass)
   );
-
   console.log(
     `[DB] ${eventSelected && eventSelected.length} for pass: ${messageContent}`
   );
@@ -202,7 +198,7 @@ async function isPassAvailable(db, pass) {
 }
 
 const isMsgTheSame = (message, eventPass) => {
-  let messagePass = message.replace('!', '').replace(/ /g, "")
+  let messagePass = message.replace('!', '').replace(/ /g, "");
   return eventPass.localeCompare(messagePass, undefined, { sensitivity: 'base' }) === 0;
 }
 
