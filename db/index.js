@@ -123,7 +123,7 @@ async function checkCodeForEventUsername(db, event_id, username) {
       }
 
       let code = await t.oneOrNone(
-        "SELECT code FROM codes WHERE event_id = $1 AND username = $2::numeric;",
+        "SELECT code FROM codes WHERE event_id = $1 AND username = $2;",
         [event_id, username], (a) => a? a.code : null);
       if(code){
           return code;

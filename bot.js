@@ -252,6 +252,7 @@ const handleStepAnswer = async (message) => {
     case steps.RESPONSE: {
       if (answer === "-")
         answer = state.event.response_message || defaultResponseMessage;
+
       state.event.response_message = answer;
       state.next = steps.PASS;
       state.dm.send(
