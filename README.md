@@ -25,7 +25,7 @@ Example of proper settings :
 ![Discord User Settings](https://ethstaker.cc/wp-content/uploads/2021/06/Screenshot-from-2021-06-21-15-12-43.png)
 
 ## How To Configure the POAP-Bot For A POAP Event
-Once the POAP-Bot has been installed to your Discord Server you can now configure it to automatically distribute POAP Claim Codes on your server. In order to configure the POAP-Bot you will need to supply the following informaiton:
+Once the POAP-Bot has been installed to your Discord Server you can now configure it to automatically distribute POAP Claim Codes on your server. In order to configure the POAP-Bot you will need to supply the following information:
 - Public Notification Channel on Discord
 - Start/End Date & Time of Event
 - Public Confirmation Message
