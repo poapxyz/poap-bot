@@ -1,4 +1,9 @@
 # @POAP-Bot: Automated Claim Code distribution for POAP events via Discord
+
+## READ ME FIRST ⚠️
+There are improved versions of this bot that provide additional security and better UX. Please check [POAP.Directory](https://poap.directory/en/integrations/discord) for the latest version. If you are unsure how to proceed, please review recommendations for quality drops in the [POAP Issuer Guidelines](https://curation.poap.xyz/guidelines/policy-and-process/poap-issuer-guidelines#guidelines).
+
+
 ## Prerequisites
 The POAP-Bot is open for any and all to use to help automate the distribution of POAP Claim Codes during a live event for use on a Discord Server. You will need the following in order to Install & Configure the POAP-Bot:
 
