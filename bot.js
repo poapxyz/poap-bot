@@ -61,6 +61,8 @@ const defaultResponseMessage =
   "Thanks for participating in the event. Here is a link where you can claim your POAP token: {code} ";
 const instructions = ":warning: :warning: :warning: :warning: **You MUST send me a DIRECT MESSAGE with the code** :warning: :warning: :warning: :warning:  (click my name)"
 
+const userBlacklist = [];
+
 var state = {
   state: states.LISTEN,
   expiry: 0,
@@ -304,8 +306,9 @@ const handlePrivateEventMessage = async (message) => {
   logger.info(`[DM] msg: ${message.content}`);
 
   const userIsBanned = await isBanned(db, message.author.id);
+  const userIsBlacklisted = userBlacklist.includes(message.author.id);
 
-  if (!userIsBanned) {
+  if (!userIsBanned && !userIsBlacklisted) {
     // 1) check if pass is correct and return an event
     const event = await queryHelper.getEventFromPass(db, message.content);
     console.log(event);
